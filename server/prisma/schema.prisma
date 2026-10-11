@@ -1,0 +1,442 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  Admin
+  Faculty
+  Student
+  Examiner
+}
+
+enum UserStatus {
+  active
+  inactive
+  locked
+}
+
+enum ExamType {
+  Internal
+  External
+  Online
+}
+
+enum QuestionType {
+  MCQ
+  ShortAnswer
+  Essay
+}
+
+enum DifficultyLevel {
+  Easy
+  Medium
+  Hard
+}
+
+enum PaperStatus {
+  Draft
+  UnderReview
+  Approved
+  Rejected
+}
+
+enum AttemptStatus {
+  NotStarted
+  InProgress
+  Submitted
+  AutoSubmitted
+  UnderEvaluation
+  Evaluated
+}
+
+enum ModerationStatus {
+  Pending
+  Approved
+  Rejected
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+}
+
+enum DeliveryStatus {
+  Pending
+  Sent
+  Failed
+}
+
+model User {
+  user_id           Int          @id @default(autoincrement())
+  full_name         String       @db.VarChar(100)
+  email             String       @unique @db.VarChar(150)
+  password_hash     String       @db.VarChar(255)
+  role              UserRole
+  status            UserStatus   @default(active)
+  contact_number    String?      @db.VarChar(20)
+  institutional_id  String?      @unique @db.VarChar(50)
+  failed_attempts   Int          @default(0)
+  locked_until      DateTime?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+
+  student           Student?
+  faculty           Faculty?
+  notifications     Notification[]
+  audit_logs        AuditLog[]
+  refresh_tokens    RefreshToken[]
+
+  @@map("users")
+}
+
+model Student {
+  student_id     Int           @id @default(autoincrement())
+  user_id        Int           @unique
+  enrollment_no  String        @unique @db.VarChar(20)
+  course_id      Int
+  batch_year     Int
+  attendance_pct Decimal       @default(0.00) @db.Decimal(5, 2)
+  is_active      Boolean       @default(true)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+
+  user           User          @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  course         Course        @relation(fields: [course_id], references: [course_id], onDelete: Restrict)
+  hall_tickets   HallTicket[]
+  exam_attempts  ExamAttempt[]
+  results        Result[]
+  attendance     Attendance[]
+
+  @@map("students")
+}
+
+model Faculty {
+  faculty_id      Int                   @id @default(autoincrement())
+  user_id         Int                   @unique
+  department      String                @db.VarChar(100)
+  designation     String                @db.VarChar(50)
+  created_at      DateTime              @default(now())
+  updated_at      DateTime              @updatedAt
+
+  user            User                  @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+  assignments     FacultySubject[]
+  scheduled_exams ExamSchedule[]
+
+  @@map("faculty")
+}
+
+model Course {
+  course_id      Int       @id @default(autoincrement())
+  course_name    String    @db.VarChar(100)
+  duration_years Int
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  subjects       Subject[]
+  students       Student[]
+
+  @@map("courses")
+}
+
+model Subject {
+  subject_id      Int              @id @default(autoincrement())
+  subject_code    String           @unique @db.VarChar(20)
+  subject_name    String           @db.VarChar(100)
+  course_id       Int
+  semester        Int
+  credits         Int
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  course          Course           @relation(fields: [course_id], references: [course_id], onDelete: Cascade)
+  exams           Exam[]
+  questions       Question[]
+  question_papers QuestionPaper[]
+  faculty_links   FacultySubject[]
+
+  @@map("subjects")
+}
+
+model FacultySubject {
+  id                     Int       @id @default(autoincrement())
+  faculty_id             Int
+  subject_id             Int
+  is_primary_coordinator Boolean   @default(false)
+  created_at             DateTime  @default(now())
+
+  faculty                Faculty   @relation(fields: [faculty_id], references: [faculty_id], onDelete: Cascade)
+  subject                Subject   @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade)
+
+  @@unique([faculty_id, subject_id])
+  @@map("faculty_subjects")
+}
+
+model Exam {
+  exam_id          Int             @id @default(autoincrement())
+  subject_id       Int
+  exam_type        ExamType
+  total_marks      Int
+  duration_minutes Int
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+
+  subject          Subject         @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade)
+  schedules        ExamSchedule[]
+  results          Result[]
+  question_papers  QuestionPaper[]
+
+  @@map("exams")
+}
+
+model ExamSchedule {
+  schedule_id         Int            @id @default(autoincrement())
+  exam_id             Int
+  exam_date           DateTime       @db.Date
+  start_time          String         @db.VarChar(10) // HH:mm format
+  end_time            String         @db.VarChar(10) // HH:mm format
+  venue               String         @db.VarChar(100)
+  batch_year          Int?
+  is_published        Boolean        @default(false)
+  assigned_faculty_id Int?
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
+
+  exam                Exam           @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
+  assigned_faculty    Faculty?       @relation(fields: [assigned_faculty_id], references: [faculty_id], onDelete: SetNull)
+  hall_tickets        HallTicket[]
+  attendance          Attendance[]
+  attempts            ExamAttempt[]
+
+  @@index([exam_date, venue])
+  @@index([exam_date, batch_year])
+  @@map("exam_schedules")
+}
+
+model HallTicket {
+  hallticket_id     Int           @id @default(autoincrement())
+  student_id        Int
+  schedule_id       Int
+  ticket_number     String        @unique @db.VarChar(50)
+  eligibility_status String       @default("Eligible") @db.VarChar(20)
+  rejection_reason  String?       @db.Text
+  is_approved       Boolean       @default(true)
+  issued_at         DateTime      @default(now())
+  created_at        DateTime      @default(now())
+
+  student           Student       @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  schedule          ExamSchedule  @relation(fields: [schedule_id], references: [schedule_id], onDelete: Cascade)
+
+  @@unique([student_id, schedule_id])
+  @@map("hall_tickets")
+}
+
+model Question {
+  question_id     Int                @id @default(autoincrement())
+  subject_id      Int
+  question_text   String             @db.Text
+  question_type   QuestionType
+  difficulty      DifficultyLevel
+  marks           Int
+  unit            Int?
+  tags            String?            @db.VarChar(255)
+  options         Json?
+  correct_answer  String             @db.Text
+  explanation     String?            @db.Text
+  creator_id      Int?
+  is_published    Boolean            @default(true)
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+
+  subject         Subject            @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade)
+  paper_items     QuestionPaperItem[]
+  responses       ExamResponse[]
+
+  @@index([subject_id, unit, difficulty, question_type])
+  @@map("questions")
+}
+
+model QuestionPaper {
+  paper_id          Int                 @id @default(autoincrement())
+  subject_id        Int
+  exam_id           Int?
+  title             String              @db.VarChar(150)
+  total_marks       Int
+  criteria          Json?
+  version           Int                 @default(1)
+  created_by_id     Int
+  status            PaperStatus         @default(Draft)
+  examiner_feedback String?             @db.Text
+  approved_at       DateTime?
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+
+  subject           Subject             @relation(fields: [subject_id], references: [subject_id], onDelete: Cascade)
+  exam              Exam?               @relation(fields: [exam_id], references: [exam_id], onDelete: SetNull)
+  items             QuestionPaperItem[]
+
+  @@map("question_papers")
+}
+
+model QuestionPaperItem {
+  id          Int           @id @default(autoincrement())
+  paper_id    Int
+  question_id Int
+  order_index Int           @default(0)
+  marks       Int
+
+  paper       QuestionPaper @relation(fields: [paper_id], references: [paper_id], onDelete: Cascade)
+  question    Question      @relation(fields: [question_id], references: [question_id], onDelete: Restrict)
+
+  @@unique([paper_id, question_id])
+  @@map("question_paper_items")
+}
+
+model ExamAttempt {
+  attempt_id        Int            @id @default(autoincrement())
+  student_id        Int
+  schedule_id       Int
+  status            AttemptStatus  @default(NotStarted)
+  start_time        DateTime       @default(now())
+  deadline          DateTime
+  submission_time   DateTime?
+  evaluation_status String         @default("Pending") @db.VarChar(30)
+  score             Decimal?       @db.Decimal(6, 2)
+  tab_switches      Int            @default(0)
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+
+  student           Student        @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  schedule          ExamSchedule   @relation(fields: [schedule_id], references: [schedule_id], onDelete: Cascade)
+  responses         ExamResponse[]
+
+  @@unique([student_id, schedule_id])
+  @@map("exam_attempts")
+}
+
+model ExamResponse {
+  response_id     Int         @id @default(autoincrement())
+  attempt_id      Int
+  question_id     Int
+  student_answer  String?     @db.Text
+  saved_at        DateTime    @default(now())
+  marks_awarded   Decimal?    @db.Decimal(5, 2)
+  comments        String?     @db.Text
+  evaluated_by_id Int?
+
+  attempt         ExamAttempt @relation(fields: [attempt_id], references: [attempt_id], onDelete: Cascade)
+  question        Question    @relation(fields: [question_id], references: [question_id], onDelete: Restrict)
+
+  @@unique([attempt_id, question_id])
+  @@map("exam_responses")
+}
+
+model Result {
+  result_id         Int              @id @default(autoincrement())
+  student_id        Int
+  exam_id           Int
+  marks_obtained    Decimal          @db.Decimal(6, 2)
+  max_marks         Decimal          @db.Decimal(6, 2)
+  grade             String           @db.VarChar(5)
+  grade_points      Decimal          @db.Decimal(4, 2)
+  evaluator_id      Int?
+  moderation_status ModerationStatus @default(Pending)
+  is_published      Boolean          @default(false)
+  remarks           String?          @db.Text
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+
+  student           Student          @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  exam              Exam             @relation(fields: [exam_id], references: [exam_id], onDelete: Cascade)
+
+  @@unique([student_id, exam_id])
+  @@map("results")
+}
+
+model Attendance {
+  attendance_id Int              @id @default(autoincrement())
+  student_id    Int
+  schedule_id   Int
+  status        AttendanceStatus
+  marked_by_id  Int?
+  marked_at     DateTime         @default(now())
+
+  student       Student          @relation(fields: [student_id], references: [student_id], onDelete: Cascade)
+  schedule      ExamSchedule     @relation(fields: [schedule_id], references: [schedule_id], onDelete: Cascade)
+
+  @@unique([student_id, schedule_id])
+  @@map("attendance")
+}
+
+model Notification {
+  notification_id Int            @id @default(autoincrement())
+  user_id         Int
+  message         String         @db.Text
+  type            String         @default("GENERAL") @db.VarChar(50)
+  delivery_status DeliveryStatus @default(Pending)
+  is_read         Boolean        @default(false)
+  retry_count     Int            @default(0)
+  error_log       String?        @db.Text
+  created_at      DateTime       @default(now())
+
+  user            User           @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+  @@map("notifications")
+}
+
+model AuditLog {
+  log_id            Int      @id @default(autoincrement())
+  user_id           Int?
+  action            String   @db.VarChar(100)
+  affected_resource String?  @db.VarChar(100)
+  resource_id       String?  @db.VarChar(100)
+  metadata          Json?
+  ip_address        String?  @db.VarChar(50)
+  timestamp         DateTime @default(now())
+
+  user              User?    @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+
+  @@index([action, timestamp])
+  @@map("audit_logs")
+}
+
+model GradingPolicy {
+  id             Int      @id @default(autoincrement())
+  grade          String   @unique @db.VarChar(5)
+  min_percentage Decimal  @db.Decimal(5, 2)
+  max_percentage Decimal  @db.Decimal(5, 2)
+  grade_point    Decimal  @db.Decimal(4, 2)
+  description    String?  @db.VarChar(100)
+  is_active      Boolean  @default(true)
+
+  @@map("grading_policies")
+}
+
+model SystemSetting {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique @db.VarChar(50)
+  value       String   @db.Text
+  description String?  @db.VarChar(255)
+  updated_at  DateTime @updatedAt
+
+  @@map("system_settings")
+}
+
+model RefreshToken {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  token_hash String   @db.VarChar(255)
+  expires_at DateTime
+  revoked    Boolean  @default(false)
+  created_at DateTime @default(now())
+
+  user       User     @relation(fields: [user_id], references: [user_id], onDelete: Cascade)
+
+  @@index([user_id, token_hash])
+  @@map("refresh_tokens")
+}

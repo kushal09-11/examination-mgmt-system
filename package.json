@@ -1,0 +1,22 @@
+{
+  "name": "examination-management-system",
+  "version": "1.0.0",
+  "description": "Full-stack Examination Management System (EMS) strictly conforming to SRS v1.0",
+  "scripts": {
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "test": "cd server && npm test",
+    "seed": "cd server && node prisma/seed.js",
+    "build": "cd client && npm run build"
+  },
+  "keywords": [
+    "ems",
+    "examination-management-system",
+    "react",
+    "express",
+    "postgresql",
+    "prisma"
+  ],
+  "author": "EMS Engineering Team",
+  "license": "ISC"
+}
