@@ -20,7 +20,8 @@ export function Login() {
       await login(email, password);
       navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      const msg = err.response?.data?.message || (err.message === 'Network Error' ? 'Unable to connect to EMS server. Please ensure the backend is running.' : (err.message || 'Login failed. Please check your credentials.'));
+      setError(msg);
     } finally {
       setLoading(false);
     }
